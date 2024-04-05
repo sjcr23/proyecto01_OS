@@ -218,9 +218,8 @@ void serialize_huffman_tree(struct MinHeapNode* root, FILE* file) {
 /**
  * 
 */
-void write_metadata(size_t offset, const char* filename, size_t size, FILE* file) {
+void write_metadata(const char* filename, size_t size, FILE* file) {
     // Write offset, filename length, and filename string
-    fwrite(&offset, sizeof(size_t), 1, file);
     size_t filename_length = strlen(filename);
     fwrite(&filename_length, sizeof(size_t), 1, file);
     fwrite(filename, sizeof(char), filename_length, file);
@@ -270,16 +269,12 @@ void unlock_file(FILE *fp) {
 
 
 
-void write_encoded_bits_to_file(wchar_t *buffer, size_t buffer_size, const char* filepath, struct MinHeapNode* huffmanRoot, struct HuffmanCode* huffmanCodes[], FILE *output_file, size_t* offsetsPtr, int pos) {
+void write_encoded_bits_to_file(wchar_t *buffer, size_t buffer_size, const char* filepath, struct MinHeapNode* huffmanRoot, struct HuffmanCode* huffmanCodes[], FILE *output_file, int pos) {
     // Extract the name for the current file
     const char* filename = extract_filename(filepath);
     
-    // Get current position in output file (offset)
-    size_t offset = ftell(output_file);
-    offsetsPtr[pos-1] = offset;
-
     // Write metadata (filename and size) to the output file;
-    write_metadata(offset, filename, buffer_size, output_file);
+    write_metadata(filename, buffer_size, output_file);
     
     // Serialize Huffman tree and write it to the output file
     serialize_huffman_tree(huffmanRoot, output_file);
@@ -444,13 +439,7 @@ struct MinHeapNode* deserialize_huffman_tree(FILE* file) {
 }
 
 // Function to read metadata (filename and size) from the binary file
-void read_metadata(size_t* offset, const char* filename, size_t* size, FILE* file) {
-    // Read offset
-    if (fread(offset, sizeof(size_t), 1, file) != 1) {
-        perror("- Error reading offset");
-        exit(EXIT_FAILURE);
-    }
-    
+void read_metadata(const char* filename, size_t* size, FILE* file) {
     // Read filename length
     size_t filename_length;
     if (fread(&filename_length, sizeof(size_t), 1, file) != 1) {
@@ -503,8 +492,7 @@ void decompress_and_write_to_file(FILE *source, const char *output_path, int pos
     // Read metadata (filename and size) from the input file
     size_t file_size;
     char filename[256];
-    size_t offset;
-    read_metadata(&offset, filename, &file_size, source);
+    read_metadata(filename, &file_size, source);
     printf("[PID %d][DECODING #%d] %s\n", getpid(), pos, filename);
 
     // Deserialize Huffman Tree from the binary file

@@ -55,7 +55,7 @@ void encode_file(wchar_t *buffer, const char* filename, struct HuffmanCode* huff
 /**
  * 
 */
-void write_encoded_bits_to_file(wchar_t *buffer, size_t buffer_size, const char* filename, struct MinHeapNode* huffmanRoot, struct HuffmanCode* huffmanCodes[], FILE *output_file, size_t* offsetsPtr, int pos);
+void write_encoded_bits_to_file(wchar_t *buffer, size_t buffer_size, const char* filename, struct MinHeapNode* huffmanRoot, struct HuffmanCode* huffmanCodes[], FILE *output_file, int pos);
 
 /**
  * 
@@ -65,7 +65,7 @@ struct MinHeapNode* deserialize_huffman_tree(FILE* file);
 /**
  * 
 */
-void read_metadata(size_t* offset, const char* filename, size_t* size, FILE* file);
+void read_metadata(const char* filename, size_t* size, FILE* file);
 
 /**
  * 

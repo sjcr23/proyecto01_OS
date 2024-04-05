@@ -18,11 +18,10 @@
 #include "../huffman/freq.c"
 #include "file_locks.c"
 
-#define SHM_SIZE (MAX_TOTAL_BOOKS * sizeof(size_t))
 #define SEM_1 "/sem_1"
 
 
-void encode(char *input_file, char *freq_file, FILE *binary_output, size_t *offsets, int pos){
+void encode(char *input_file, char *freq_file, FILE *binary_output, int pos){
 
     // Fill the buffer
     wchar_t *buffer = NULL;
@@ -50,7 +49,7 @@ void encode(char *input_file, char *freq_file, FILE *binary_output, size_t *offs
 
     // Write the Huffman Codes to file    
     size_t buffer_size = wcslen(buffer);
-    write_encoded_bits_to_file(buffer, buffer_size, input_file, huffmanRoot, huffmanCodesArray, binary_output, offsets, pos);
+    write_encoded_bits_to_file(buffer, buffer_size, input_file, huffmanRoot, huffmanCodesArray, binary_output, pos);
 }
 
 int main() {
@@ -59,52 +58,45 @@ int main() {
     pid_t pid;
     sem_t *sem = NULL;
     
-    size_t *offsets;
-    
-    // Use IPC_PRIVATE for simplicity (use a real key in production)
-    key_t key = IPC_PRIVATE;
-    
-    // Create shared memory segment
-    if ((shmid = shmget(key, SHM_SIZE, IPC_CREAT | 0666)) < 0) {
-        perror("shmget");
-        exit(EXIT_FAILURE);
-    }
+    // Offsets array to be populated
+    size_t offsets[MAX_TOTAL_BOOKS] = {0};
 
-    // Attach shared memory segment to the process
-    
-    if ((offsets = shmat(shmid, NULL, 0)) == (size_t *) -1) {
-        perror("shmat");
-        exit(EXIT_FAILURE);
-    }
-
-    // Initialize the array in the parent process
-    int numOfProcess = TOTAL_BOOKS;
-    for (int i = 0; i < MAX_TOTAL_BOOKS; ++i) {
-        offsets[i] = 0;
-    }
-    
     // Folder Paths
     const char* booksFolder = "books";
     const char* out = "out/bin/compressed.bin";
-
-    FILE *binary_output = fopen(out, "wb");
-    if (binary_output == NULL) {
-        perror("Error opening output binary file");
-        exit(EXIT_FAILURE);
-    }
-
+    
     // Set for every book in books folder
     struct EncodeArgs *paths = getAllPaths(booksFolder);
 
+    // Initialize the array in the parent process
+    int numOfProcess = paths->fileCount;
+    
+    
     struct DirectoryMetadata dirMetadata = {
         .directory = booksFolder,
         .numTxtFiles = paths->fileCount,
         .offsets = {0}
     };
 
+
+    // Open file to write metadata
+    FILE *binary_output = fopen(out, "wb");
+    if (binary_output == NULL) {
+        perror("Error opening output binary file");
+        exit(EXIT_FAILURE);
+    }
+
     // Write content metadata to binary file and get the position for the offsets array
     long offsets_pos = write_directory_metadata(binary_output, &dirMetadata);
+    long lastBit = ftell(binary_output);
+
+    offsets[0] = lastBit;
+
+    fseek(binary_output, offsets_pos, SEEK_SET);
+    fwrite(offsets, sizeof(size_t), dirMetadata.numTxtFiles, binary_output);
     
+    fclose(binary_output);
+
     sem = sem_open(SEM_1, O_CREAT | O_EXCL, 0644, 1);
      
     // Encode
@@ -115,14 +107,58 @@ int main() {
         if (pid == 0) {
             sem_wait(sem);
             
+            size_t *current_offsets;
+
+            printf("BBC\n");
+            // Open file to write metadata
+            FILE *metadata = fopen(out, "rb+");
+            if (metadata == NULL) {
+                perror("Error opening output binary file");
+                exit(EXIT_FAILURE);
+            }  
+
+            // Read offset
+            fseek(metadata, offsets_pos, SEEK_SET);
+            if (fread(current_offsets, sizeof(size_t), dirMetadata.numTxtFiles, metadata) != 1) {
+                perror("- Error reading offsets");
+                exit(EXIT_FAILURE);
+            }
+
+            fclose(metadata);
+            
+            printf("First one readed: %zu\n", current_offsets[0]);
+            printf("Current readed: %zu\n", current_offsets[i]);
+
+            FILE *binary_output = fopen(out, "wb");
+            
+            long start = current_offsets[i];
+            fseek(binary_output, start, SEEK_SET);
+
             // Escribir
             printf("[PID %d][CODING #%d] %s\n", getpid(), i+1, paths->books[i]);
-            encode(paths->books[i], paths->freqs[i], binary_output, offsets, i+1);
+            encode(paths->books[i], paths->freqs[i], binary_output, i+1);
 
+            long end = ftell(binary_output);
+            
+            // Si es la última salaga (evitar overflow)
+            if (i == numOfProcess-1){
+                fclose(binary_output);
+                sem_post(sem);
+                sem_close(sem);
+                exit(EXIT_SUCCESS);
+            }
+
+            current_offsets[i+1] = ftell(binary_output);
+
+            // Re-write offsets
+            fseek(binary_output, offsets_pos, SEEK_SET);
+            fwrite(current_offsets, sizeof(size_t), MAX_TOTAL_BOOKS, binary_output);
+
+            fclose(binary_output);
             sem_post(sem);
             sem_close(sem);
-
             exit(EXIT_SUCCESS);
+
         } else if (pid < 0) {
             // Error al crear el proceso hijo
             perror("fork");
@@ -137,14 +173,25 @@ int main() {
 
     sem_close(sem);
     sem_unlink(SEM_1);
-
-    fseek(binary_output, offsets_pos, SEEK_SET);
-    fwrite(offsets, sizeof(size_t), paths->fileCount, binary_output);
     
     shmdt(offsets);
     shmctl(shmid, IPC_RMID, NULL);
-    fclose(binary_output);
     free(paths);
-    
+
     return EXIT_SUCCESS;
 }
+
+// // Use IPC_PRIVATE for simplicity (use a real key in production)
+//     key_t key = IPC_PRIVATE;
+    
+//     // Create shared memory segment
+//     if ((shmid = shmget(key, SHM_SIZE, IPC_CREAT | 0666)) < 0) {
+//         perror("shmget");
+//         exit(EXIT_FAILURE);
+//     }
+
+//     // Attach shared memory segment to the process
+//     if ((offsets = shmat(shmid, NULL, 0)) == (size_t *) -1) {
+//         perror("shmat");
+//         exit(EXIT_FAILURE);
+//     }

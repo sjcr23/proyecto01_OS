@@ -8,7 +8,7 @@
 #include "../huffman/freq.c"
 
 
-void encode(char *input_file, char *freq_file, FILE *binary_output, int pos, size_t* offsets){
+void encode(char *input_file, char *freq_file, FILE *binary_output, int pos){
 
     // Fill the buffer
     wchar_t *buffer = NULL;
@@ -38,7 +38,7 @@ void encode(char *input_file, char *freq_file, FILE *binary_output, int pos, siz
 
     // Write the Huffman Codes to file    
     size_t buffer_size = wcslen(buffer);
-    write_encoded_bits_to_file(buffer, buffer_size, input_file, huffmanRoot, huffmanCodesArray, binary_output, offsets, pos);
+    write_encoded_bits_to_file(buffer, buffer_size, input_file, huffmanRoot, huffmanCodesArray, binary_output, pos);
 }
 
 int main() {
@@ -46,14 +46,17 @@ int main() {
     const char* booksFolder = "books";
     const char* out = "out/bin/compressed.bin";
 
+    // Set for every book in books folder
+    struct EncodeArgs *paths = getAllPaths(booksFolder);
+    
+    // Initialize the array in the parent process
+    int numOfBooks = paths->fileCount;
+
     FILE *binary_output = fopen(out, "wb");
     if (binary_output == NULL) {
         perror("Error opening output binary file");
         exit(EXIT_FAILURE);
     }
-
-    // Set for every book in books folder
-    struct EncodeArgs *paths = getAllPaths(booksFolder);
 
     struct DirectoryMetadata dirMetadata = {
         .directory = booksFolder,
@@ -61,22 +64,31 @@ int main() {
         .offsets = {0}
     };
 
-    // Write content metadata to binary file and get the position for the offsets array
-    long offsets_pos = write_directory_metadata(binary_output, &dirMetadata);
-
     // Offsets array to be populated
     size_t offsets[MAX_TOTAL_BOOKS] = {0};
 
+    // Write content metadata to binary file and get the position for the offsets array
+    long offsets_pos = write_directory_metadata(binary_output, &dirMetadata);
+    long lastBit = ftell(binary_output);
+
+    offsets[0] = lastBit;
+
     // Encode
-    for (int i = 0; i < paths->fileCount; i++) {
+    for (int i = 0; i < numOfBooks; i++) {
         printf("[CODING #%d] %s\n", i+1, paths->books[i]);
-        encode(paths->books[i], paths->freqs[i], binary_output, i+1, offsets);
+        encode(paths->books[i], paths->freqs[i], binary_output, i+1);
+        
+        // Si es la última salga (evitar overflow)
+        if (i == numOfBooks-1){
+            break;
+        }
+
+        offsets[i+1] = ftell(binary_output);
     }
     
     // Update the offsets array in the binary file
     fseek(binary_output, offsets_pos, SEEK_SET);
-    fwrite(offsets, sizeof(size_t), paths->fileCount, binary_output);
-
+    fwrite(offsets, sizeof(size_t), numOfBooks, binary_output);
 
     fclose(binary_output);
     free(paths);

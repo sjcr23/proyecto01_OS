@@ -54,7 +54,7 @@ void encode(char *input_file, FILE *binary_output, int pos, size_t* offsetsPtr){
 
     // Lock the mutex before accessing the output file
     pthread_mutex_lock(&mutex);
-    write_encoded_bits_to_file(buffer, buffer_size, input_file, huffmanRoot, huffmanCodesArray, binary_output, offsetsPtr, pos);
+    write_encoded_bits_to_file(buffer, buffer_size, input_file, huffmanRoot, huffmanCodesArray, binary_output, pos);
     // Unlock the mutex after accessing the output file
     pthread_mutex_unlock(&mutex);
 
