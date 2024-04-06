@@ -110,16 +110,18 @@ int main() {
             size_t *current_offsets;
 
             printf("BBC\n");
-            // Open file to write metadata
+            // Abrir file
             FILE *metadata = fopen(out, "rb+");
             if (metadata == NULL) {
                 perror("Error opening output binary file");
                 exit(EXIT_FAILURE);
             }  
 
-            // Read offset
+            // Leer offsets
+            size_t current_offsets[dirMetadata.numTxtFiles];
+            
             fseek(metadata, offsets_pos, SEEK_SET);
-            if (fread(current_offsets, sizeof(size_t), dirMetadata.numTxtFiles, metadata) != 1) {
+            if (fread(current_offsets, sizeof(size_t), dirMetadata.numTxtFiles, metadata) != numOfProcess) {
                 perror("- Error reading offsets");
                 exit(EXIT_FAILURE);
             }
